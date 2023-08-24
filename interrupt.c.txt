@@ -1,0 +1,104 @@
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/kdev_t.h>
+#include <linux/fs.h>
+#include <linux/err.h>
+#include <linux/cdev.h>
+#include <linux/device.h>
+#include <linux/interrupt.h>
+
+dev_t dev;
+static struct cdev dev_cdev;
+static struct class *dev_class;
+
+static irqreturn_t irq_handler(int irq,void *dev_id) 
+{
+	printk(KERN_INFO "Shared IRQ: Interrupt Occurred");
+	return IRQ_HANDLED;
+}
+
+static int my_open(struct inode *inode, struct file *fp);
+static int my_release(struct inode *inode, struct file *fp);
+static ssize_t my_read(struct file *fp, char __user *buf, size_t len,loff_t * off);
+static ssize_t my_write(struct file *fp, const char *buf, size_t len, loff_t * off);
+
+static struct file_operations fops = 
+{
+	.owner = THIS_MODULE,
+	.read = my_read,
+	.write = my_write,
+	.open = my_open,
+	.release = my_release,
+};
+
+static int my_open(struct inode *inode, struct file *fp)
+{
+        pr_info("Device File Opened...!!!\n");
+        return 0;
+}
+
+static int my_release(struct inode *inode, struct file *fp)
+{
+        pr_info("Device File Closed...!!!\n");
+        return 0;
+}
+
+static ssize_t my_read(struct file *fp, char __user *buf, size_t len, loff_t *off)
+{
+        pr_info("Read function\n");
+        return 0;
+}
+
+static ssize_t my_write(struct file *fp, const char __user *buf, size_t len, loff_t *off)
+{
+        pr_info("Write Function\n");
+        return len;
+}
+
+static int __init interrupt_init(void)
+{
+	if((alloc_chrdev_region(&dev, 0, 1, "device_number")) < 0)
+	{
+		pr_info("Cannot allocate major number\n");
+		return -1;
+	}
+	pr_info("Major number : %d, Minor number : %d\n",MAJOR(dev),MINOR(dev));
+
+	cdev_init(&dev_cdev,&fops);
+
+	if((cdev_add(&dev_cdev,dev,1)) < 0)
+	{
+		pr_info("Cannot add dedvice to the system\n");
+		return -1;
+	}
+
+	dev_class = class_create(THIS_MODULE,"my_class");
+
+	device_create(dev_class,NULL,dev,NULL,"my_device");
+
+	if(request_irq(1, irq_handler, IRQF_SHARED, "my_device", (void *) (irq_handler)))
+	{
+		pr_info("Cannot register IRQ\n");
+		return -1;
+	}
+
+	pr_info("Kernel module inserted\n");
+	return 0;
+}
+
+static void __exit interrupt_exit(void)
+{
+	free_irq(1, (void *) (irq_handler));
+	device_destroy(dev_class,dev);
+	class_destroy(dev_class);
+	cdev_del(&dev_cdev);
+	unregister_chrdev_region(dev,1);
+	pr_info("Kernel module removed\n");
+}
+
+module_init(interrupt_init);
+module_exit(interrupt_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("Tejaswini S P");
